@@ -40,3 +40,8 @@
 *.run.xml
 #python
 __pycache__
+#my bloody typo in vim write
+1
+#autoreaload?
+.ropeproject
+
