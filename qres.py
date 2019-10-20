@@ -95,8 +95,9 @@ class OpenGraph:
                   }
         """
         opt = {'flow': True, 'total_order': False, 'partial_order': False}
-        for val,key in options :
-            if key in opt : opt['key'] = val
+        for k,v in opt.items():
+            if k in options :
+                opt[k] = options[k]
 
         directed, undirected = list(), list()
         if opt['flow']:
