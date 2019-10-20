@@ -58,14 +58,14 @@ class OpenGraph:
         self.I = I
         self.O = O
         self.partial_ordering = False
-        self.set_nodetypes()
-        self.set_flow()
+        self._set_nodetypes_()
+        self._set_flow_()
 
     def __copy__(self):
         return OpenGraph(self.G, self.I, self.O)
 
 
-    def set_nodetypes(self):
+    def _set_nodetypes_(self):
         """
         Set attirubute ntypes for every node: {input, output, aux(iliary)}
         """
@@ -105,7 +105,7 @@ class OpenGraph:
                 if 'flow' in attr :
                     directed += [(n, attr['flow'])]
 
-            #sort stuff before substracting
+            #sort stuff before subtracting
             sedges = set(map(lambda x: tuple(sorted(x)), self.G.edges))
             fedges = set(map(lambda x: tuple(sorted(x)), directed))
             undirected = sedges.difference(fedges) #set
@@ -132,7 +132,10 @@ class OpenGraph:
                 sedges += ['%s->%s;'%(str(a),str(b))]
 
         #combine the strings
-        sdot = 'digraph{'+''.join(snodes)+'rankdir=LR;'.join(sedges)+'}'
+        sdot = 'digraph{'+''.join(snodes)+'rankdir=LR;'+''.join(sedges)+\
+               '{rank=same;'+ ';'.join(str(i) for i in self.I)+';}'+\
+               '{rank=same;'+ ';'.join(str(i) for i in self.O.difference(self.I))+';}'+\
+               '}'
         graphv = pgv.AGraph(sdot)
         graphv.layout(prog='dot')
         graphv.draw(outfile)
@@ -141,7 +144,7 @@ class OpenGraph:
 
 ## Flow-related methods
 
-    def set_flow(self):
+    def _set_flow_(self):
         """
         set flow by adding flow attribute to every node and
         set attribute partial_ordering to the graph
