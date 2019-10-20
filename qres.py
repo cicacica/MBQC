@@ -1,8 +1,17 @@
-#!/usr/bin/env python3
+ #!/usr/bin/env python3
 
-__doc__=""" qres --- quantum resource --- contains GraphState class. Graph state object as a resource of 1WQC
-computations. Notations are adapted from paper xxx:
+__doc__=""" qres --- quantum resource --- contains:
+    1) class OpenGraph. The graph that is used for GraphState, in hypothetical sense.
+       The clients and the server have access to this information.
+    2) class GraphState. Graph state object as a resource of 1WQC
+        computations. Only server that has access to this.
+    3) class Server. The child class inherited from GraphState
+    4) class Client. The client with small quantum power, depending on the input/output type.
+
+    All notations used here are adapted from Blind Oracular Quantum Computation
+    paper (unpublished).
 """
+
 __author__ = "Cica Gustiani"
 __license__ = "Apache2"
 __version__ = "1.0.0"
@@ -12,15 +21,18 @@ __email__ = "cicagustiani@gmail.com"
 
 #standard libraries
 import networkx as nx
+import pygraphviz as pgv
 
 
-class GraphState:
+class OpenGraph:
     """
-    create graph state as a resouce for 1WQC computation.
+    Create an open-graph as a hypothetical resouce for 1WQC computation.
     """
     def __init__(self, G, I=set(), O=set()):
-        """ Instantiation of the GraphState object. That is the resource of
+        """ Instantiation of the OpenGraph object. That is the resource of
         1WQC computations. Only works with a class of graphs that have flow.
+        Everything here is classical. It is the parent of all classess here.
+        All methods here are related to graph, in GRAPH-THEORY sense.
 
         param
             :G: networkx.graph, an open simple graph
@@ -28,37 +40,105 @@ class GraphState:
             :O: set, a set of output nodes
         """
         #input checking
-        if nx.classes.graph.Graph != type(G):
+        if not isinstance(G, nx.classes.graph.Graph):
             raise TypeError('provide a simple graph, a networkx.Graph object')
 
-        if set != type(I) or not I.issubset(set(G.nodes())) :
-            raise ValueError('provide I as a (sub)set of nodes in G, as quantum input')
+        if not isinstance(I,set):
+            raise TypeError('I must be a set()')
+        elif not I.issubset(set(G.nodes())) :
+            raise ValueError('I must be a subset of nodes in G')
 
-        if set != type(O) or not O.issubset(set(G.nodes())) :
-            raise ValueError('provide O as a (sub)set of nodes in G, as quantum input')
+        if not isinstance(O,set):
+            raise TypeError('O must be a set()')
+        elif not O.issubset(set(G.nodes())) :
+            raise ValueError('O must be a subset of nodes in G')
 
         #initializations
         self.G = G
         self.I = I
         self.O = O
         self.partial_ordering = False
+        self.set_nodetypes()
         self.set_flow()
 
-        #quantum part
-        self.quantum_input = False
-        self.quantum_register = False
-
-
     def __copy__(self):
-        return GraphState(self.G, self.I, self.O)
+        return OpenGraph(self.G, self.I, self.O)
 
 
-    def set_quantum_input(self, rho_in):
+    def set_nodetypes(self):
         """
-        assign quantum state to input nodes
+        Set attirubute ntypes for every node: {input, output, aux(iliary)}
         """
-        pass
+        types = dict([(n, list()) for n in self.G.nodes])
+        for i in self.I :
+            types[i] +=  ['input']
+        for i in self.O :
+            types[i] +=  ['output']
+        for i in set(self.G.nodes).difference(self.I.union(self.O)):
+            types[i] +=  ['aux']
 
+        #assign it to the nodes
+        for node in self.G.nodes:
+            self.G.add_node(node, ntypes = set(types[node]))
+
+
+## aesthetic-related methods
+
+    def draw_graph(self, outfile='out.png', **options):
+        """
+        Draw graph with some options
+
+        output : out.png file
+        options : { flow : True,
+                    total_order : False,
+                    partial_order : False
+                  }
+        """
+        opt = {'flow': True, 'total_order': False, 'partial_order': False}
+        for val,key in options :
+            if key in opt : opt['key'] = val
+
+        directed, undirected = list(), list()
+        if opt['flow']:
+            for n, attr in self.G.nodes.items():
+                if 'flow' in attr :
+                    directed += [(n, attr['flow'])]
+
+            #sort stuff before substracting
+            sedges = set(map(lambda x: tuple(sorted(x)), self.G.edges))
+            fedges = set(map(lambda x: tuple(sorted(x)), directed))
+            undirected = sedges.difference(fedges) #set
+        else :
+            undirected = self.G.edges #list
+
+        ## creating a dot string
+
+        # nodes part
+        snodes = list()
+        shape = {'input': 'shape=diamond', 'output': 'shape=circle', 'aux':'shape=circle'}
+        style = {'input': '', 'output':'style=filled fillcolor=gray', 'aux':''}
+        for n, attr in self.G.nodes.items() :
+            natt = ' '.join([shape[t] for t in attr['ntypes']])
+            natt += ' '+' '.join([style[t] for t in attr['ntypes']])
+            snodes+= ['%s [%s];'%(str(n),natt)  ]
+
+        # edges part
+        sedges = list()
+        for a,b in undirected :
+            sedges += ['%s->%s [arrowhead=none];'%(str(a),str(b))]
+        if opt['flow'] :
+            for a,b in directed :
+                sedges += ['%s->%s;'%(str(a),str(b))]
+
+        #combine the strings
+        sdot = 'digraph{'+''.join(snodes)+'rankdir=LR;'.join(sedges)+'}'
+        graphv = pgv.AGraph(sdot)
+        graphv.layout(prog='dot')
+        graphv.draw(outfile)
+
+
+
+## Flow-related methods
 
     def set_flow(self):
         """
@@ -68,16 +148,14 @@ class GraphState:
         f_exist, f, poset, flow_criteria = self.flow(self.G, self.I, self.O)
 
         if not f_exist :
-            raise RuntimeError('graph does not have a flow')
+            raise RuntimeError('graph does not have a flow. Sorry, find another Graph')
         if f_exist and not flow_criteria :
-            raise ValueError('inconsistent result: A THEORY BUG')
+            raise ValueError('inconsistent result: DANGEROUS! A THEORY BUG')
 
         for dom, cod in f.items():
             self.G.add_node(dom, flow=cod)
 
         self.partial_ordering = poset
-
-
 
 
     @classmethod
@@ -196,4 +274,54 @@ class GraphState:
 
 
 
+class GraphState(OpenGraph):
+    """
+    Create a graph state as a quantum resouce for 1WQC computation. Only
+    parties with quantum computer has access to this; that guy is Bob.
+    """
+    def __init__(self, G, I, O):
+        """ Instantiation of the OpenGraph object. That is the resource of
+        1WQC computations. Only works with a class of graphs that have flow.
+        Everything here is classical. It is the parent of all classess here.
+
+        param
+            :G: networkx.graph, an open simple graph
+            :I: set, a set input nodes
+            :O: set, a set of output nodes
+
+        methods related to graph state in QUANTUM sense
+        """
+        self.qreg = False
+
+
+    def init_nodes_plus(self, nqubit):
+        """
+        Initialize the qubit which corresponding to node in graph with
+        state |0>^nqubit
+
+        :nqubit: int, the number of qubits to be assigned
+        """
+        pass
+
+    def init_nodes_zero(self, nqubit):
+        """
+        Initialize the qubit which corresponding to node in graph with
+        state |0>^nqubit
+
+        :nqubit: int, the number of qubits to be assigned
+        """
+        pass
+
+    def apply_entangling_to(self, node_set):
+        """
+        Apply an entangling operations on the corresponding edges
+        in a set of qubits node_set
+        """
+        pass
+
+    def set_quantum_input(self, rho_in):
+        """
+        assign quantum state to input nodes
+        """
+        pass
 
