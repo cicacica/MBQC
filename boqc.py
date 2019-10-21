@@ -21,6 +21,7 @@ __email__ = "cicagustiani@gmail.com"
 
 
 from qres import GraphState, OpenGraph
+from numpy import random
 
 
 
@@ -45,6 +46,26 @@ class lazy1WQC(GraphState):
         self.phi = phi
 
 
+    def set_total_order_random(self, random_seed=None):
+        """ Generate a random total ordering that follows flow, then s
+            set attribute 'total_order' to every node in G.
+            Total ordering goes from 0 to len(V)-1
+
+        param
+            :random_seed: int, the seed for random ordering
+        """
+        random.seed(random_seed)
+        idx, torder = 0, dict()
+        for inset in self.partial_ordering.values():
+            ridx = random.permutation(range(idx,idx+len(inset)))
+            for n,i in zip(inset, ridx):
+                torder[n]=i
+            idx += len(inset)
+
+        self.set_total_order(torder)
+
+
+
     def set_total_order(self, total_order):
         """ Set attribute 'total_order' to every node in G.
         The total order must follows the partial ordering induced by flow.
@@ -53,7 +74,8 @@ class lazy1WQC(GraphState):
             :total_order: dict{node:total_order}, pair of node and it's total order
         """
         #sorted nodes based on total order
-        sorted_nodes = sorted(total_order.values(), key=lambda x:total_order[x])
+        rtorder = dict([(o,n) for n,o in total_order.items()])
+        sorted_nodes = [rtorder[o] for o in sorted(rtorder.keys())]
 
         idx = 0
         for sset in self.partial_ordering.values(): #this loop is ordered
