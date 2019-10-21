@@ -26,7 +26,7 @@ from numpy import random
 
 
 
-class lazy1WQC(GraphState):
+class Lazy1WQC(GraphState):
 
     def __init__(self, G, I, O, phi):
         """ Instantiation of lazy1WQC object. This class corresponds to
@@ -44,6 +44,9 @@ class lazy1WQC(GraphState):
 
         super().__init__(G, I, O)
         self.phi = phi
+        self.total_ordering = False
+        self.I_type = 'quantum'
+        self.O_type = 'quantum'
 
 
     def set_total_order_random(self, random_seed=None):
@@ -65,16 +68,34 @@ class lazy1WQC(GraphState):
         self.set_total_order(torder)
 
 
-
-    def set_total_order(self, total_order):
-        """ Set attribute 'total_order' to every node in G.
-        The total order must follows the partial ordering induced by flow.
+    def set_io_type(input_type, output_type):
+        """ Set the input and output type. By default, input and output are
+        quantum.
 
         param
-            :total_order: dict{node:total_order}, pair of node and it's total order
+            :input_type:str('quantum'|'classical') the input type: classical or quantum.
+                        if classical, the state does not required to be prepared ahead.
+            :output_type:str('quantum'|'classical') the input type: classical or quantum
+                        if classical, all qubits in graph will be measured.
+        """
+        ioty = {'quantum', 'classical'}
+        if input_type not in ioty:
+            raise ValueError('input type must be quantum or classical')
+        if output_type not in ioty:
+            raise ValueError('output type must be quantum or classical')
+
+
+
+    def set_total_order(self, total_ordering):
+        """ Set attribute 'total_order' to every node in G.
+        The total order must follows the partial ordering induced by flow.
+        The total_order will be placed as attribute
+
+        param
+            :total_ordering: dict{node:total_order}, pair of node and it's total order
         """
         #sorted nodes based on total order
-        rtorder = dict([(o,n) for n,o in total_order.items()])
+        rtorder = dict([(o,n) for n,o in total_ordering.items()])
         sorted_nodes = [rtorder[o] for o in sorted(rtorder.keys())]
 
         idx = 0
@@ -85,13 +106,15 @@ class lazy1WQC(GraphState):
             if inset != sset :
                 raise ValueError('the total ordering is inconsistent with flow')
 
-        for n, torder in total_order.items():
+        for n, torder in total_ordering.items():
             self.G.add_node(n, total_order=torder)
+        self.total_ordering = total_ordering
 
 
-    def cneighbors(self, node) :
+    def cneighbors(self, node_i) :
         """
-        Return a set of closed neighborhood of node
+        Return a set of closed neighborhood of node i. In BOQC paper
+        it is denoted as N_G[i].
 
         param
             :node:str|int, a node in G
@@ -99,10 +122,10 @@ class lazy1WQC(GraphState):
         return
             set
         """
-        return set(self.G.neighbors(node)).union(node)
+        return set(self.G.neighbors(node_i)).union({node_i})
 
 
-    def A(self, node):
+    def A_i(self, node_i):
         """
         Equation (14) from BOQC paper. It returns the new qubits assigned
         at a time step.
@@ -113,7 +136,37 @@ class lazy1WQC(GraphState):
         return
             set
         """
-        return
+        try :
+            sorted_nodes = sorted(self.G.nodes, key=lambda x:self.G.nodes[x]['total_order'])
+        except KeyError :
+            raise RuntimeError('You have not set a total ordering yet. Try method set_total_order_random()')
+
+        prev_nodes = list() #list is faster than set
+        for node in sorted_nodes:
+            if node == node_i :
+                break
+            prev_nodes += list(self.cneighbors(node))
+
+        if self.I_type == 'quantum' :
+            prev_nodes += list(self.I)
+
+        return self.cneighbors(node_i).difference(prev_nodes)
+
+
+    ## statements present in the BOQC paper
+
+    def lemma2(self):
+        """
+        A(i) contains at least f(i), for all i in O^c.
+        """
+        subset = set(self.G.nodes).difference(set(self.O))
+        for i in subset :
+            if not self.f[i] in self.A_i(i):
+                return 'FAIL'
+        return 'PASS'
+
+
+
 
 
 

@@ -1,4 +1,4 @@
-#!/usb/bin/env python3
+#!/usr/bin/env python3
 
 import networkx as nx
 
@@ -86,7 +86,7 @@ def graph_kashefi_duncan():
     return (G,I,O)
 
 
-def graph_brickwork(H, W):
+def graph_brickwork(H=5, W=8):
     """Generate a brickwork graph
 
     Generate a brickwork graph with a given width and height
@@ -123,7 +123,8 @@ def graph_brickwork(H, W):
 ## graph state that has known outcome with pre-determined angles
 
 def graph_cnot():
-    """The CNOT gate     *
+    """The CNOT gate
+                         *
                          |
                       *--o--o
     here is an example where I and O are overlap
