@@ -73,6 +73,7 @@ def test_lemma4(repeat=1):
             print(lazyc.lemma4(), graphf.__name__)
 
 
+
 def test_conj1(repeat=1, n_sampling=10):
     print('potential conjecture 1: sampling number %i'%n_sampling)
     iotypes = {'classical', 'quantum'}
@@ -82,7 +83,11 @@ def test_conj1(repeat=1, n_sampling=10):
             for graphf in get_graphs_fun():
                 lazyc = Lazy1WQC(*graphf(), dict())
                 lazyc.set_io_type(i_type, o_type)
-                print(*lazyc.bound_physical_qubit(nsampling=n_sampling), graphf.__name__)
+
+                guess1 = max([len(lazyc.I),len(lazyc.O)])+1
+                guess2 = max([len(c) for c in lazyc.partial_ordering.values()])+1
+
+                print(*lazyc.bound_physical_qubit(nsampling=n_sampling),  guess1, guess2, graphf.__name__)
             print(" ")
 
 
