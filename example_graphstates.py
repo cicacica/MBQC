@@ -138,39 +138,12 @@ def graph_exact3grover():
     """ The graph used in exact 3 qubits grover. Node posisitions are set.
     """
     G = nx.Graph()
-
-    # positions
-    r1=[1,4,6,8,10,11,13,19,21,23,26,28,30,32,35,38,41,43,45,47,49,55,57,59,
-        62,64,66,68,75,77,79,81,87,89,92,94,96]
-    r2=[2,5,7,9,15,17,20,22,24,27,29,31,33,36,39,42,44,46,51,53,56,58,60,63,
-        65,67,69,71,73,76,78,83,85,88,90,91]
-    r3=[3,12,14,16,18,25,34,37,40,48,50,52,54,61,70,72,74,80,82,84,86,93,95,97]
-
-    # row 1
-    for i, node in enumerate(r1) :
-        G.add_node(node, pos=(i,2))
-
-    #row 2
-    for i, node in enumerate(r2) :
-        p = (i,1) if i < 4 else (i+1,1)
-        G.add_node(node, pos=p)
-
-    #row 3
-    s3 = {0:4, 5:3, 8:3, 13:3} #shifted keys
-    for i, node in enumerate(r3) :
-        p = [i,0]
-        for j in s3.keys():
-            if i > j :
-                p[0] += s3[j]
-        G.add_node(node, pos=tuple(p))
-
     G.add_edges_from([(r1[i],r1[i+1]) for i in range(len(r1)-1)])
     G.add_edges_from([(r2[i],r2[i+1]) for i in range(len(r2)-1)])
     G.add_edges_from([(r3[i],r3[i+1]) for i in range(len(r3)-1)])
     G.add_edges_from([(6,7),(19,20),(15,16),(23,24),(32,33),(38,40),(39,40),
                       (44,43),(55,56),(51,52),(59,60),(71,72),(75,76),(79,80),
                       (83,84),(87,88),(92,93)])
-
     I = set([1,2,3])
     O = set([96,91,97])
 

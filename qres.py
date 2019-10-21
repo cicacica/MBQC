@@ -28,7 +28,7 @@ class OpenGraph:
     """
     Create an open-graph as a hypothetical resouce for 1WQC computation.
     """
-    def __init__(self, G, I=set(), O=set()):
+    def __init__(self, G, I, O):
         """ Instantiation of the OpenGraph object. That is the resource of
         1WQC computations. Only works with a class of graphs that have flow.
         Everything here is classical. It is the parent of all classess here.
@@ -45,19 +45,20 @@ class OpenGraph:
 
         if not isinstance(I,set):
             raise TypeError('I must be a set()')
-        elif not I.issubset(set(G.nodes())) :
-            raise ValueError('I must be a subset of nodes in G')
+            if not I.issubset(set(G.nodes())) or len(I)==0:
+                raise ValueError('I must be a nonempty subset of nodes in G')
 
         if not isinstance(O,set):
             raise TypeError('O must be a set()')
-        elif not O.issubset(set(G.nodes())) :
-            raise ValueError('O must be a subset of nodes in G')
+            if not O.issubset(set(G.nodes())) or len(O)==0:
+                raise ValueError('O must be a subset of nodes in G')
 
         #initializations
         self.G = G
         self.I = I
         self.O = O
         self.partial_ordering = False
+        self.f = False
         self._set_nodetypes_()
         self._set_flow_()
 
@@ -101,9 +102,8 @@ class OpenGraph:
 
         directed, undirected = list(), list()
         if opt['flow']:
-            for n, attr in self.G.nodes.items():
-                if 'flow' in attr :
-                    directed += [(n, attr['flow'])]
+            for dom, cod  in self.f.items():
+                directed += [(dom, cod)]
 
             #sort stuff before subtracting
             sedges = set(map(lambda x: tuple(sorted(x)), self.G.edges))
@@ -160,6 +160,7 @@ class OpenGraph:
             self.G.add_node(dom, flow=cod)
 
         self.partial_ordering = poset
+        self.f = f
 
 
     @classmethod
@@ -293,8 +294,9 @@ class GraphState(OpenGraph):
             :I: set, a set input nodes
             :O: set, a set of output nodes
 
-        methods related to graph state in QUANTUM sense
+        Methods related to graph state in QUANTUM sense
         """
+        super().__init__(G, I, O)
         self.qreg = False
 
 
