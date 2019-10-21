@@ -103,12 +103,11 @@ class OpenGraph:
         directed, undirected = list(), list()
         if opt['flow']:
             for dom, cod  in self.f.items():
-                directed += [(dom, cod)]
+                edge = (dom, cod) if (dom,cod) in self.G.edges  else (cod,dom)
+                directed += [edge]
 
             #sort stuff before subtracting
-            sedges = set(map(lambda x: tuple(sorted(x)), self.G.edges))
-            fedges = set(map(lambda x: tuple(sorted(x)), directed))
-            undirected = sedges.difference(fedges) #set
+            undirected = set(self.G.edges).difference(directed) #set
         else :
             undirected = self.G.edges #list
 

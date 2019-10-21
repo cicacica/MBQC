@@ -55,11 +55,11 @@ class Lazy1WQC(GraphState):
             Total ordering goes from 0 to len(V)-1
 
         param
-            :random_seed: int, the seed for random ordering
+            :random_seed: int, the seed for random ordering, for reproducibility
         """
-        random.seed(random_seed)
         idx, torder = 0, dict()
         for inset in self.partial_ordering.values():
+            random.seed(random_seed)
             ridx = random.permutation(range(idx,idx+len(inset)))
             for n,i in zip(inset, ridx):
                 torder[n]=i
@@ -68,7 +68,7 @@ class Lazy1WQC(GraphState):
         self.set_total_order(torder)
 
 
-    def set_io_type(input_type, output_type):
+    def set_io_type(self, input_type, output_type):
         """ Set the input and output type. By default, input and output are
         quantum.
 
@@ -83,6 +83,9 @@ class Lazy1WQC(GraphState):
             raise ValueError('input type must be quantum or classical')
         if output_type not in ioty:
             raise ValueError('output type must be quantum or classical')
+
+        self.I_type = input_type
+        self.O_type = output_type
 
 
 
@@ -155,7 +158,8 @@ class Lazy1WQC(GraphState):
     def A_i(self, node_i):
         """
         Equation (14) from BOQC paper. It returns the new qubits assigned
-        at a time step.
+        at a time step. This number varies depending on the ordering and
+        input type
 
         param
             :node:str|int, a node in G
@@ -203,6 +207,40 @@ class Lazy1WQC(GraphState):
         return res
 
 
+    def bound_physical_qubit(self, nsampling=1, random_seed=None):
+        """
+        Explicitely calculate a bound of physical qubits, given random sampling
+        n_sampling times. The bound for input-output types are different.
+
+        param
+            :nsampling: int, number of sampling
+            :random_seed: int, the random seed, for reproduciblility
+        """
+        bound = []
+        for samp in range(nsampling):
+            # sample from a random total ordering
+            self.set_total_order_random(random_seed=random_seed)
+            #"assigning" input state to input nodes
+            qalive_i = [0]*len(self.G.nodes)
+            qalive = 0 if self.I_type == 'classical' else len(self.I)
+            for i,node in enumerate(self.sortedtot_nodes()):
+                #"operating N_Ai"
+                qalive += len(self.A_i(node))
+                qalive_i[i] += qalive
+
+                #"measuring i" if i is not in output nodes
+                if node in self.O :
+                    if self.O_type == 'quantum' :
+                        pass
+                else :
+                    qalive -= 1
+            bound += [max(qalive_i)]
+        return (min(bound), max(bound))
+
+
+
+
+
     ## statements present in the BOQC paper
 
     def lemma2(self):
@@ -225,12 +263,15 @@ class Lazy1WQC(GraphState):
         for i in set(self.G.nodes).difference(self.O):
             ai += list(self.A_i(i))
 
-        #do rigorous proof, using list!
-        i_comp = sorted(set(self.G.nodes()).difference(self.I))
-        if sorted(ai) == i_comp :
-            return 'PASS'
+        if self.I_type == 'quantum':
+            i_comp = set(self.G.nodes()).difference(self.I)
         else :
-            return 'FAIL'
+            i_comp = set(self.G.nodes())
+
+        if len(i_comp) == len(ai):
+            if len(set(ai).difference(i_comp)) == 0:
+                return 'PASS'
+        return 'FAIL'
 
 
     def lemma4(self):
