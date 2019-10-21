@@ -20,7 +20,7 @@ __maintainer__ = "Cica Gustiani"
 __email__ = "cicagustiani@gmail.com"
 
 
-from qres import GraphState, OpenGraph
+from qres import GraphState, OpenGraph, nx
 from numpy import random
 
 
@@ -124,6 +124,33 @@ class Lazy1WQC(GraphState):
         """
         return set(self.G.neighbors(node_i)).union({node_i})
 
+    def neighbors(self, node_i) :
+        """
+        Return a set of open neighborhood of node i. In BOQC paper
+        it is denoted as N_G(i).
+
+        param
+            :node:str|int, a node in G
+
+        return
+            set
+        """
+        return set(self.G.neighbors(node_i))
+
+    def sortedtot_nodes(self):
+        """
+        Return a list of nodes ordered by it's total ordering
+
+        return
+            list(nodes)
+        """
+        try :
+            snodes = sorted(self.G.nodes, key=lambda x:self.G.nodes[x]['total_order'])
+        except KeyError :
+            raise RuntimeError('You have not set a total ordering yet. Try method set_total_order_random()')
+
+        return snodes
+
 
     def A_i(self, node_i):
         """
@@ -136,13 +163,8 @@ class Lazy1WQC(GraphState):
         return
             set
         """
-        try :
-            sorted_nodes = sorted(self.G.nodes, key=lambda x:self.G.nodes[x]['total_order'])
-        except KeyError :
-            raise RuntimeError('You have not set a total ordering yet. Try method set_total_order_random()')
-
         prev_nodes = list() #list is faster than set
-        for node in sorted_nodes:
+        for node in self.sortedtot_nodes():
             if node == node_i :
                 break
             prev_nodes += list(self.cneighbors(node))
@@ -153,21 +175,75 @@ class Lazy1WQC(GraphState):
         return self.cneighbors(node_i).difference(prev_nodes)
 
 
+    def Egt_iK(self, node_i, subK):
+        """
+        Equation (4), E^>_{iK}
+
+        :node_i:node, the node in G
+        :subK:set, subset K, where K is subset of node in G
+
+            return
+               list contains the edges
+        """
+        if not node_i in self.G.nodes :
+            raise ValueError('node_i is not an element of nodes in G')
+        if not isinstance(subK, set) :
+            raise TypeError('subK must be set type')
+        if not subK.issubset(set(self.G.nodes)):
+            raise ValueError('subK must be a subset of nodes in G')
+
+        sortedK = sorted(subK, key=lambda x: self.G.nodes[x]['total_order'])
+        lti = [node_i]  #less than i
+        for n in sortedK :
+            if n == node_i :
+                break
+            lti += [n]
+
+        res =  list(self.G.subgraph(lti).edges())
+        return res
+
+
     ## statements present in the BOQC paper
 
     def lemma2(self):
         """
         A(i) contains at least f(i), for all i in O^c.
         """
-        subset = set(self.G.nodes).difference(set(self.O))
+        subset = set(self.G.nodes).difference(self.O)
         for i in subset :
             if not self.f[i] in self.A_i(i):
                 return 'FAIL'
         return 'PASS'
 
 
+    def lemma3(self):
+        """
+        If you collect all elements of every A(i), for all i in O^c, you
+        will obtain I^c.
+        """
+        ai = list()
+        for i in set(self.G.nodes).difference(self.O):
+            ai += list(self.A_i(i))
+
+        #do rigorous proof, using list!
+        i_comp = sorted(set(self.G.nodes()).difference(self.I))
+        if sorted(ai) == i_comp :
+            return 'PASS'
+        else :
+            return 'FAIL'
 
 
+    def lemma4(self):
+        """
+        Sum of all E^>_{iNg} for all i, results in all edges E
+        """
+        sum_eing = list()
+        for i in self.G.nodes:
+            sum_eing += self.Egt_iK(i, self.neighbors(i))
+
+        if nx.is_isomorphic(self.G, nx.Graph(sum_eing)):
+            return 'PASS'
+        return 'FAIL'
 
 
 
