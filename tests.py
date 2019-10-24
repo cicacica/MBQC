@@ -85,7 +85,7 @@ def test_conj1(repeat=1, n_sampling=10):
                 lazyc.set_io_type(i_type, o_type)
 
                 guess1 = max([len(lazyc.I),len(lazyc.O)])+1
-                guess2 = max([len(c) for c in lazyc.partial_ordering.values()])+1
+                guess2 = max([len(c) for c in lazyc.ordering_class.values()])+1
 
                 print(*lazyc.bound_physical_qubit(nsampling=n_sampling),  guess1, guess2, graphf.__name__)
             print(" ")
@@ -95,9 +95,9 @@ def test_conj1(repeat=1, n_sampling=10):
 if __name__ == "__main__" :
     test_conj1(repeat=1, n_sampling=100)
     print('')
-    test_lemma2(1)
+    test_lemma2(3)
     print('')
-    test_lemma3(1)
+    test_lemma3(3)
     print('')
-    test_lemma4(1)
+    test_lemma4(3)
 

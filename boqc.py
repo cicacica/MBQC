@@ -58,7 +58,7 @@ class Lazy1WQC(GraphState):
             :random_seed: int, the seed for random ordering, for reproducibility
         """
         idx, torder = 0, dict()
-        for inset in self.partial_ordering.values():
+        for inset in self.ordering_class.values():
             random.seed(random_seed)
             ridx = random.permutation(range(idx,idx+len(inset)))
             for n,i in zip(inset, ridx):
@@ -102,7 +102,7 @@ class Lazy1WQC(GraphState):
         sorted_nodes = [rtorder[o] for o in sorted(rtorder.keys())]
 
         idx = 0
-        for sset in self.partial_ordering.values(): #this loop is ordered
+        for sset in self.ordering_class.values(): #this loop is ordered
             #incomparable set
             inset = set(sorted_nodes[idx:idx+len(sset)])
             idx += len(sset)

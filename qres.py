@@ -24,6 +24,26 @@ import networkx as nx
 import pygraphviz as pgv
 
 
+
+
+# self-defined exceptions
+class Error(Exception):
+    """Base class for exceptions in this module."""
+    pass
+
+class FlowError(Error):
+    """Exception raised for errors in the graph
+
+    Attributes:
+        expression -- input expression in which the error occurred
+        message -- explanation of the error
+    """
+
+    def __init__(self, message):
+        self.message = message
+
+
+
 class OpenGraph:
     """
     Create an open-graph as a hypothetical resouce for 1WQC computation.
@@ -57,7 +77,7 @@ class OpenGraph:
         self.G = G
         self.I = I
         self.O = O
-        self.partial_ordering = False
+        self.ordering_class = False
         self.f = False
         self._set_nodetypes_()
         self._set_flow_()
@@ -73,14 +93,37 @@ class OpenGraph:
         types = dict([(n, list()) for n in self.G.nodes])
         for i in self.I :
             types[i] +=  ['input']
+
         for i in self.O :
             types[i] +=  ['output']
-        for i in set(self.G.nodes).difference(self.I.union(self.O)):
+
+        for i in set(self.G.nodes)-self.I-self.O:
             types[i] +=  ['aux']
 
         #assign it to the nodes
         for node in self.G.nodes:
             self.G.add_node(node, ntypes = set(types[node]))
+
+## random graph generation-related method
+    @classmethod
+    def random_open_graph(cls, n_I, n_O, n_aux, f_trial=10):
+        """
+        Return a random open graph. Iterates the graph, by
+        adding one-by one the node as many as n_aux, then add
+        the edges randomly.
+
+        param
+            :n_I:int, number of input nodes
+            :n_O:int, number of output nodes
+        """
+        I_nodes = ['i%i'%i for i in range(n_I)]
+        O_nodes = ['o%i'%i for i in range(n_Oe)]
+
+        G = nx.Graph()
+
+        #prepare the nodes, let say they have total order
+        for i,node in enumerate(I_nodes):
+            G.add_node(node, ntypes={'input'})
 
 
 ## aesthetic-related methods
@@ -107,7 +150,7 @@ class OpenGraph:
                 directed += [edge]
 
             #sort stuff before subtracting
-            undirected = set(self.G.edges).difference(directed) #set
+            undirected = set(self.G.edges)-directed #set
         else :
             undirected = self.G.edges #list
 
@@ -133,13 +176,11 @@ class OpenGraph:
         #combine the strings
         sdot = 'digraph{'+''.join(snodes)+'rankdir=LR;'+''.join(sedges)+\
                '{rank=same;'+ ';'.join(str(i) for i in self.I)+';}'+\
-               '{rank=same;'+ ';'.join(str(i) for i in self.O.difference(self.I))+';}'+\
+               '{rank=same;'+ ';'.join(str(i) for i in self.O - self.I)+';}'+\
                '}'
         graphv = pgv.AGraph(sdot)
         graphv.layout(prog='dot')
         graphv.draw(outfile)
-
-
 
 ## Flow-related methods
 
@@ -151,15 +192,17 @@ class OpenGraph:
         f_exist, f, poset, flow_criteria = self.flow(self.G, self.I, self.O)
 
         if not f_exist :
-            raise RuntimeError('graph does not have a flow. Sorry, find another Graph')
+            raise FlowError('graph does not have a flow. Sorry, find another Graph')
         if f_exist and not flow_criteria :
             raise ValueError('inconsistent result: DANGEROUS! A THEORY BUG')
 
         for dom, cod in f.items():
             self.G.add_node(dom, flow=cod)
 
-        self.partial_ordering = poset
+        self.ordering_class = poset
         self.f = f
+
+
 
 
     @classmethod
@@ -190,7 +233,16 @@ class OpenGraph:
             Vs_sorted[j] = Vs[max(Vs.keys())-j]
         Vs_sorted[max(Vs.keys())] = set(O)
 
-        sanity = cls._check_flow_conditions_(G, O, g, Vs_sorted)
+        # sanity check
+        node_ordering = dict()
+        for order,sset in Vs_sorted.items() :
+            for node in sset :
+                node_ordering[node] = order
+        v_aux = set(G.nodes)-I-O
+
+        sanity= 3 == sum((cls.flowcondition_f0(G, v_aux, g),
+                     cls.flowcondition_f1(G, v_aux, g, node_ordering),
+                     cls.flowcondition_f2(G, v_aux, g, node_ordering)))
 
         return (is_cflow_exist, g, Vs_sorted, sanity)
 
@@ -225,53 +277,51 @@ class OpenGraph:
 
 
     @staticmethod
-    def _check_flow_conditions_(G, O, f, L):
-        """ Check the flow conditions are fullfilled
-
-        param
-            :G: networkx.Graph, the corresponding graph
-            :O: set, the output nodes
-            :f: dict, flow map, node to node
-            :L: dict, the ordering class 1..N
-
-        return
-            (bool,bool,bool), truth for each criteria
+    def flowcondition_f0(G, v_aux, f):
         """
-        def get_flow_class(v,L):
-            """
-            Return the class of node v
-            :v: node
-            :L: dict, the ordering class in format {1: {1, 2}, ...
-            """
-            for c, nodes in L.items():
-                if v in nodes :
-                    return c
-        aux = list(set(G.nodes)-set(O))
+        Check flow condition 0: i in G(f(i))
 
-        #condition 1: j < f(j), forall j
-        c1 = True
-        for j in aux :
-            if get_flow_class(j,L) >= get_flow_class(f[j],L):
-                c1= False
-                break
-
-        #condition 2: if j in G(f(i)), then j=i or i<j
-        c2 = True
-        for i in aux:
-            for j in G.neighbors(f[i]) :
-                if get_flow_class(j,L)<get_flow_class(i,L) :
-                    c2 = False
-                    break
-
-        #condition 3: i in G(f(i))
-        c3 = True
-        for i in aux :
+        :G:nx.graph, the graph
+        :v_aux:any iterable, the auxiliary nodes
+        :f:dict, the dictionary contains flow information {1:2, 3:4, ..}
+        """
+        for i in v_aux :
             if i not in G.neighbors(f[i]):
-                c3 = False
-                break
+                return False
+        return True
 
-        return (c1,c2,c3)
 
+    @staticmethod
+    def flowcondition_f1(G, v_aux, f, ordering):
+        """
+        Check flow condition 1: j < f(j), forall j
+
+        :G:nx.graph, the graph
+        :v_aux:any iterable, the auxiliary nodes
+        :f:dict, the dictionary contains flow information {1:2, 3:4, ..}
+        :ordering:dict, the dictionary contains ordering for each node {1:1, 3:1, ..}
+        """
+        for j in v_aux :
+            if ordering[j] >= ordering[f[j]]:
+                return False
+        return True
+
+
+    @staticmethod
+    def flowcondition_f2(G, v_aux, f, ordering):
+        """
+        Check flow condition 2: if j in G(f(i)), then j=i or i<j
+
+        :G:nx.graph, the graph
+        :v_aux:any iterable, the auxiliary nodes
+        :f:dict, the dictionary contains flow information {1:2, 3:4, ..}
+        :ordering:dict, the dictionary contains ordering for each node {1:1, 3:1, ..}
+        """
+        for i in v_aux:
+            for j in G.neighbors(f[i]) :
+                if ordering[j] < ordering[i] :
+                    return False
+        return True
 
 
 
