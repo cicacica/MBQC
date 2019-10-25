@@ -239,7 +239,10 @@ class OpenGraph:
             og = OpenGraph(G, I, O)
             og.draw_graph('out%s.png'%str(idx))
 
-        return G if flow_exist else False
+        if flow_exist :
+            return G
+        else :
+            return False
 
 
 
