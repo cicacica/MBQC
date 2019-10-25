@@ -107,7 +107,7 @@ if __name__ == "__main__" :
     """
     try :
         kind = args[0]
-        repeat = args[1]
+        repeat = int(args[1])
 
         if kind == 'conj1' :
             test_conj1(repeat=repeat, n_sampling=100)

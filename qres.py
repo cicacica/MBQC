@@ -24,6 +24,8 @@ import networkx as nx
 import pygraphviz as pgv
 import random
 from multiprocessing import Pool
+from itertools import product
+
 
 
 
@@ -142,14 +144,17 @@ class OpenGraph:
             if k in options :
                 opt[k] = options[k]
 
-        directed, undirected = list(), list()
+        directed, undirected = list(), list(self.G.edges)
         if opt['flow']:
             for dom, cod  in self.f.items():
-                edge = (dom, cod) if (dom,cod) in self.G.edges  else (cod,dom)
-                directed += [edge]
+                try:
+                    idx = undirected.index((dom, cod))
+                except ValueError:
+                    idx = undirected.index((cod, dom))
+                directed += [(dom,cod)]
+                undirected[idx] = False
 
-            #sort stuff before subtracting
-            undirected = set(self.G.edges)-directed #set
+            undirected = [edge for edge in undirected if edge]
         else :
             undirected = self.G.edges #list
 
@@ -199,34 +204,63 @@ class OpenGraph:
         I_nodes = set(['i%i'%x for x in range(n_I)])
         O_nodes = set(['o%i'%x for x in range(n_O)])
 
+        #initialize graph, try fully connected I-O
         G = nx.Graph()
+        G.add_edges_from(product(I_nodes, O_nodes))
 
-        #prepare the nodes, let say they have total order
-        for idx, node in enumerate(I_nodes):
-            G.add_node(node, ntypes={'input'}, total_order=idx)
+        flow_exist, f, vs, sanity = cls.flow(G,I_nodes,O_nodes)
+        if not flow_exist :
+            fulledges_pset = cls.get_power_set(G.edges)
 
-        ordering = dict([(n, G.node[n]['total_order']) for n in G.nodes])
+            # remove emptyset and the set
+            poss_edges = [ss for ss in fulledges_pset]
+            poss_edges.remove(set())
+            poss_edges.remove(set(G.edges))
 
-        nodenum = n_I + n_O + n_aux
-        f = dict([(n, nodenum+1) for n in I_nodes])
-        P = Pool(4)
-        for node in range(n_aux):
-            torder = n_I + node
-            new_node = (node, {'ntypes':'aux', 'total_order':torder})
-            ordering[node] = torder
-            args = [(G, new_node, pastn, I_nodes, ordering, f) for pastn in G.nodes ]
-            results = P.starmap(cls._candidate_subgraph_, args)
-
-            if len(results) == 0 :
-                raise RuntimeError('No candidate at step %i'%node)
-
-            G, f = random.choice(results)
+            #initial graphs with flow
+            P=Pool(4)
+            p_args = [(G.copy(),I_nodes,O_nodes, edges, idx) for idx,edges in enumerate(fulledges_pset)]
+            res = P.starmap(cls._remove_edges_forflow, p_args)
 
 
-        graphv = pgv.AGraph()
-        graphv.add_edges_from(G.edges)
-        graphv.layout(prog='dot')
-        graphv.draw('out.png')
+    @classmethod
+    def _remove_edges_forflow(cls, G, I, O, redges, idx):
+        """
+        Try to obtain a graph with flow by removing edges of graph G
+
+        :G: nx.Graph(), the graph
+        :I: iter, the list of input nodes
+        :O: iter, the list of output nodes
+        :redges: list(tuple), pair of nodes at the end of edge to be removed
+        """
+        G.remove_edges_from(redges)
+        flow_exist, f, vs, sanity = cls.flow(G,I,O)
+        if flow_exist :
+            og = OpenGraph(G, I, O)
+            og.draw_graph('out%s.png'%str(idx))
+
+        return G if flow_exist else False
+
+
+
+    @staticmethod
+    def get_power_set(s):
+        """
+        Return the power set of set s, sorted by the size of subset
+
+        :s: iterable
+        """
+        power_set = [set()]
+        for element in s:
+            new_sets = []
+            for subss in power_set:
+                new_sets.append(subss | {element})
+            power_set.extend(new_sets)
+
+        return sorted(power_set, key=lambda x: len(x))
+
+
+
 
 
     @classmethod
