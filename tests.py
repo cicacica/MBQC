@@ -12,11 +12,13 @@ __doc__: """
 
     """
 
+from itertools import product
+import sys
 
 import example_graphstates
 from example_graphstates import *
 from boqc import Lazy1WQC
-from itertools import product
+from qres import OpenGraph
 
 def get_graphs_fun():
     """
@@ -93,11 +95,38 @@ def test_conj1(repeat=1, n_sampling=10):
 
 
 if __name__ == "__main__" :
-    test_conj1(repeat=1, n_sampling=100)
-    print('')
-    test_lemma2(3)
-    print('')
-    test_lemma3(3)
-    print('')
-    test_lemma4(3)
+    args = sys.argv[1:]
+
+    err_message = """
+    You did it wrong, try this:
+
+        test.py kind repeat [n_I, n_O, n_aux]
+
+    where kind = conj1 | lemma2 | lemma3 | lemma4 | random
+    arguments inside []  are needed for random kind
+    """
+    try :
+        kind = args[0]
+        repeat = args[1]
+
+        if kind == 'conj1' :
+            test_conj1(repeat=repeat, n_sampling=100)
+            print('')
+        elif kind == 'lemma2':
+            test_lemma2(repeat)
+            print('')
+        elif kind == 'lemma3':
+            test_lemma3(repeat)
+            print('')
+        elif kind == 'lemma4':
+            test_lemma4(repeat)
+            print('')
+        elif kind == 'random' :
+            n_I, n_O, n_aux = map(int, args[1:4])
+            OpenGraph.random_open_graph(n_I, n_O, n_aux)
+        else :
+            raise ValueError(err_message)
+
+    except IndexError :
+        print(err_message)
 

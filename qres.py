@@ -22,7 +22,8 @@ __email__ = "cicagustiani@gmail.com"
 #standard libraries
 import networkx as nx
 import pygraphviz as pgv
-
+import random
+from multiprocessing import Pool
 
 
 
@@ -85,7 +86,6 @@ class OpenGraph:
     def __copy__(self):
         return OpenGraph(self.G, self.I, self.O)
 
-
     def _set_nodetypes_(self):
         """
         Set attirubute ntypes for every node: {input, output, aux(iliary)}
@@ -104,26 +104,25 @@ class OpenGraph:
         for node in self.G.nodes:
             self.G.add_node(node, ntypes = set(types[node]))
 
-## random graph generation-related method
-    @classmethod
-    def random_open_graph(cls, n_I, n_O, n_aux, f_trial=10):
+
+    def _set_flow_(self):
         """
-        Return a random open graph. Iterates the graph, by
-        adding one-by one the node as many as n_aux, then add
-        the edges randomly.
-
-        param
-            :n_I:int, number of input nodes
-            :n_O:int, number of output nodes
+        set flow by adding flow attribute to every node and
+        set attribute partial_ordering to the graph
         """
-        I_nodes = ['i%i'%i for i in range(n_I)]
-        O_nodes = ['o%i'%i for i in range(n_Oe)]
+        f_exist, f, poset, flow_criteria = self.flow(self.G, self.I, self.O)
 
-        G = nx.Graph()
+        if not f_exist :
+            raise FlowError('graph does not have a flow. Sorry, find another Graph')
+        if f_exist and not flow_criteria :
+            raise ValueError('inconsistent result: DANGEROUS! A THEORY BUG')
 
-        #prepare the nodes, let say they have total order
-        for i,node in enumerate(I_nodes):
-            G.add_node(node, ntypes={'input'})
+        for dom, cod in f.items():
+            self.G.add_node(dom, flow=cod)
+
+        self.ordering_class = poset
+        self.f = f
+
 
 
 ## aesthetic-related methods
@@ -182,28 +181,86 @@ class OpenGraph:
         graphv.layout(prog='dot')
         graphv.draw(outfile)
 
+
+
+## random graph generation-related method
+
+    @classmethod
+    def random_open_graph(cls, n_I, n_O, n_aux, f_trial=10):
+        """
+        Return a random open graph. Iterates the graph, by
+        adding one-by one the node as many as n_aux, then add
+        the edges randomly.
+
+        param
+            :n_I:int, number of input nodes
+            :n_O:int, number of output nodes
+        """
+        I_nodes = set(['i%i'%x for x in range(n_I)])
+        O_nodes = set(['o%i'%x for x in range(n_O)])
+
+        G = nx.Graph()
+
+        #prepare the nodes, let say they have total order
+        for idx, node in enumerate(I_nodes):
+            G.add_node(node, ntypes={'input'}, total_order=idx)
+
+        ordering = dict([(n, G.node[n]['total_order']) for n in G.nodes])
+
+        nodenum = n_I + n_O + n_aux
+        f = dict([(n, nodenum+1) for n in I_nodes])
+        P = Pool(4)
+        for node in range(n_aux):
+            torder = n_I + node
+            new_node = (node, {'ntypes':'aux', 'total_order':torder})
+            ordering[node] = torder
+            args = [(G, new_node, pastn, I_nodes, ordering, f) for pastn in G.nodes ]
+            results = P.starmap(cls._candidate_subgraph_, args)
+
+            if len(results) == 0 :
+                raise RuntimeError('No candidate at step %i'%node)
+
+            G, f = random.choice(results)
+
+
+        graphv = pgv.AGraph()
+        graphv.add_edges_from(G.edges)
+        graphv.layout(prog='dot')
+        graphv.draw('out.png')
+
+
+    @classmethod
+    def _candidate_subgraph_(cls, G, new_node, past_node, I_nodes, ordering, f):
+        """
+        Iteration to get a graph with flow
+        """
+        G2, g = G.copy(), f.copy()
+        newnode, nattr = new_node[0], new_node[1]
+        G2.add_node(newnode,**nattr)
+        G2.add_edge(past_node, newnode)
+        g[past_node] = newnode
+        v_aux = set(G2.nodes)-I_nodes
+
+        #temporary
+        dnode = 'd'
+        dedge = (newnode, dnode)
+        G2.add_node(dnode)
+        G2.add_edge(*dedge)
+        g[newnode] = dnode
+        ordering[dnode] = ordering[newnode]+1
+        sanity= 3 == sum((cls.criteria_f0(G2, v_aux, g),
+                          cls.criteria_f1(G2, v_aux, g, ordering),
+                          cls.criteria_f2(G2, v_aux, g, ordering)))
+        G2.remove_edge(*dedge)
+        G2.remove_node(dnode)
+        del g[newnode]
+        del ordering[dnode]
+
+        if sanity:
+            return (G2, g)
+
+
 ## Flow-related methods
-
-    def _set_flow_(self):
-        """
-        set flow by adding flow attribute to every node and
-        set attribute partial_ordering to the graph
-        """
-        f_exist, f, poset, flow_criteria = self.flow(self.G, self.I, self.O)
-
-        if not f_exist :
-            raise FlowError('graph does not have a flow. Sorry, find another Graph')
-        if f_exist and not flow_criteria :
-            raise ValueError('inconsistent result: DANGEROUS! A THEORY BUG')
-
-        for dom, cod in f.items():
-            self.G.add_node(dom, flow=cod)
-
-        self.ordering_class = poset
-        self.f = f
-
-
-
 
     @classmethod
     def flow(cls, G, I, O):
@@ -240,9 +297,9 @@ class OpenGraph:
                 node_ordering[node] = order
         v_aux = set(G.nodes)-I-O
 
-        sanity= 3 == sum((cls.flowcondition_f0(G, v_aux, g),
-                     cls.flowcondition_f1(G, v_aux, g, node_ordering),
-                     cls.flowcondition_f2(G, v_aux, g, node_ordering)))
+        sanity= 3 == sum((cls.criteria_f0(G, v_aux, g),
+                     cls.criteria_f1(G, v_aux, g, node_ordering),
+                     cls.criteria_f2(G, v_aux, g, node_ordering)))
 
         return (is_cflow_exist, g, Vs_sorted, sanity)
 
@@ -277,7 +334,7 @@ class OpenGraph:
 
 
     @staticmethod
-    def flowcondition_f0(G, v_aux, f):
+    def criteria_f0(G, v_aux, f):
         """
         Check flow condition 0: i in G(f(i))
 
@@ -292,7 +349,7 @@ class OpenGraph:
 
 
     @staticmethod
-    def flowcondition_f1(G, v_aux, f, ordering):
+    def criteria_f1(G, v_aux, f, ordering):
         """
         Check flow condition 1: j < f(j), forall j
 
@@ -308,7 +365,7 @@ class OpenGraph:
 
 
     @staticmethod
-    def flowcondition_f2(G, v_aux, f, ordering):
+    def criteria_f2(G, v_aux, f, ordering):
         """
         Check flow condition 2: if j in G(f(i)), then j=i or i<j
 
@@ -322,7 +379,6 @@ class OpenGraph:
                 if ordering[j] < ordering[i] :
                     return False
         return True
-
 
 
 
