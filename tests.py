@@ -108,25 +108,33 @@ if __name__ == "__main__" :
     try :
         kind = args[0]
         repeat = int(args[1])
-
-        if kind == 'conj1' :
-            test_conj1(repeat=repeat, n_sampling=100)
-            print('')
-        elif kind == 'lemma2':
-            test_lemma2(repeat)
-            print('')
-        elif kind == 'lemma3':
-            test_lemma3(repeat)
-            print('')
-        elif kind == 'lemma4':
-            test_lemma4(repeat)
-            print('')
-        elif kind == 'random' :
-            n_I, n_O, n_aux = map(int, args[1:4])
-            OpenGraph.random_open_graph(n_I, n_O, n_aux)
-        else :
-            raise ValueError(err_message)
-
     except IndexError :
-        print(err_message)
+        sys.exit(err_message)
+
+
+    if kind == 'conj1' :
+        test_conj1(repeat=repeat, n_sampling=100)
+        print('')
+
+    elif kind == 'lemma2':
+        test_lemma2(repeat)
+        print('')
+
+    elif kind == 'lemma3':
+        test_lemma3(repeat)
+        print('')
+
+    elif kind == 'lemma4':
+        test_lemma4(repeat)
+        print('')
+
+    elif kind == 'random' :
+        try :
+            n_I, n_O, n_aux = map(int, args[1:4])
+        except IndexError :
+            sys.exit(err_message)
+        OpenGraph.random_open_graph(n_I, n_O, n_aux)
+
+    else :
+        raise ValueError(err_message)
 

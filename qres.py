@@ -24,7 +24,7 @@ import networkx as nx
 import pygraphviz as pgv
 import random
 from multiprocessing import Pool
-from itertools import product
+from itertools import product, combinations
 
 
 
@@ -90,7 +90,7 @@ class OpenGraph:
 
     def _set_nodetypes_(self):
         """
-        Set attirubute ntypes for every node: {input, output, aux(iliary)}
+        Set attribute ntypes for every node: {input, output, aux(iliary)}
         """
         types = dict([(n, list()) for n in self.G.nodes])
         for i in self.I :
@@ -191,7 +191,7 @@ class OpenGraph:
 ## random graph generation-related method
 
     @classmethod
-    def random_open_graph(cls, n_I, n_O, n_aux, f_trial=10):
+    def random_open_graph(cls, n_I, n_O, n_aux, ncpu=4):
         """
         Return a random open graph. Iterates the graph, by
         adding one-by one the node as many as n_aux, then add
@@ -203,10 +203,66 @@ class OpenGraph:
         """
         I_nodes = set(['i%i'%x for x in range(n_I)])
         O_nodes = set(['o%i'%x for x in range(n_O)])
+        G_steps = [] #evolution of graph step by step
 
-        #initialize graph, try fully connected I-O
+        G_init = cls.get_random_io_graphf(I_nodes, O_nodes, ncpu=ncpu)
+        G_steps.append(G_init)
+        for i in range(n_aux):
+            G_init = cls.insert_node_randomly(G_init, I_nodes, O_nodes, i)
+            G_steps.append(G_init)
+
+        for i,G in enumerate(G_steps):
+            og = OpenGraph(G, I_nodes, O_nodes)
+            og.draw_graph('out%s.png'%str(i))
+
+        return G_init
+
+
+    @classmethod
+    def insert_node_randomly(cls, G, I, O, node, ncpu=4, random_seed=None):
+        """
+        Insert a node called node to a graph randomly while maintaining
+        the existence of flow
+
+        :G:
+        :prevnode:
+        """
+        P_args = [(G, I, O, node, edge_target) for edge_target in G.edges ]
+        P = Pool(ncpu)
+        results = P.starmap(cls._swapnode_check_flow_, P_args)
+
+        random.seed(random_seed)
+        return random.choice([res for res in results if res])
+
+
+
+    @classmethod
+    def _swapnode_check_flow_(cls, G, I, O, node, edge_target):
+        """
+        Swap the node and check if flow exist.
+        This called as a worker
+        """
+        n1, n2 = edge_target
+        G.remove_edge(*edge_target)
+        G.add_edges_from([(node, n1),(node, n2)])
+        flow_exist, f, vs, sanity = cls.flow(G,I,O)
+
+        if flow_exist :
+            return G
+        else :
+            return False
+
+
+
+    @classmethod
+    def get_random_io_graphf(cls, I_nodes, O_nodes, ncpu=4, random_seed=None):
+        """
+        Return a random graph, that has flow, contains only
+        input and output qubits
+        """
+        #initialize graph, try connect I-O minimally to get a flow
         G = nx.Graph()
-        G.add_edges_from(product(I_nodes, O_nodes))
+        G.add_edges_from(product(I_nodes,O_nodes))
 
         flow_exist, f, vs, sanity = cls.flow(G,I_nodes,O_nodes)
         if not flow_exist :
@@ -218,9 +274,13 @@ class OpenGraph:
             poss_edges.remove(set(G.edges))
 
             #initial graphs with flow
-            P=Pool(4)
+            P=Pool(ncpu)
             p_args = [(G.copy(),I_nodes,O_nodes, edges, idx) for idx,edges in enumerate(fulledges_pset)]
-            res = P.starmap(cls._remove_edges_forflow, p_args)
+            results = P.starmap(cls._remove_edges_forflow, p_args)
+
+            random.seed(random_seed)
+            return random.choice([res for res in results if res])
+
 
 
     @classmethod
@@ -235,9 +295,6 @@ class OpenGraph:
         """
         G.remove_edges_from(redges)
         flow_exist, f, vs, sanity = cls.flow(G,I,O)
-        if flow_exist :
-            og = OpenGraph(G, I, O)
-            og.draw_graph('out%s.png'%str(idx))
 
         if flow_exist :
             return G
