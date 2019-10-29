@@ -23,8 +23,9 @@ __email__ = "cicagustiani@gmail.com"
 import networkx as nx
 import pygraphviz as pgv
 import random
-from multiprocessing import Pool
+from multiprocessing import Pool, cpu_count
 from itertools import product, combinations
+import json
 
 
 
@@ -112,12 +113,10 @@ class OpenGraph:
         set flow by adding flow attribute to every node and
         set attribute partial_ordering to the graph
         """
-        f_exist, f, poset, flow_criteria = self.flow(self.G, self.I, self.O)
+        f_exist, f, poset = self.flow(self.G, self.I, self.O)
 
         if not f_exist :
             raise FlowError('graph does not have a flow. Sorry, find another Graph')
-        if f_exist and not flow_criteria :
-            raise ValueError('inconsistent result: DANGEROUS! A THEORY BUG')
 
         for dom, cod in f.items():
             self.G.add_node(dom, flow=cod)
@@ -129,11 +128,12 @@ class OpenGraph:
 
 ## aesthetic-related methods
 
-    def draw_graph(self, outfile='out.png', **options):
+    def draw_graph(self, outfile='out.png', title='', **options):
         """
         Draw graph with some options
 
         output : out.png file
+        title : str, the title of the graph
         options : { flow : True,
                     total_order : False,
                     partial_order : False
@@ -178,7 +178,8 @@ class OpenGraph:
                 sedges += ['%s->%s;'%(str(a),str(b))]
 
         #combine the strings
-        sdot = 'digraph{'+''.join(snodes)+'rankdir=LR;'+''.join(sedges)+\
+        sdot = 'digraph{ labelloc="t"; label="%s";'%title+\
+               ''.join(snodes)+'rankdir=LR;'+''.join(sedges)+\
                '{rank=same;'+ ';'.join(str(i) for i in self.I)+';}'+\
                '{rank=same;'+ ';'.join(str(i) for i in self.O - self.I)+';}'+\
                '}'
@@ -191,7 +192,7 @@ class OpenGraph:
 ## random graph generation-related method
 
     @classmethod
-    def random_open_graph(cls, n_I, n_O, n_aux, ncpu=4):
+    def random_open_graph(cls, n_I, n_O, n_aux, return_many=True, random_seed=None, ncpu=False):
         """
         Return a random open graph. Iterates the graph, by
         adding one-by one the node as many as n_aux, then add
@@ -200,91 +201,37 @@ class OpenGraph:
         param
             :n_I:int, number of input nodes
             :n_O:int, number of output nodes
+            :n_aux:int, number of auxiliary nodes
+            :return_many:bool, return one or anything found
+            :random_seed:int, random seed
+            :ncpu:int=cpu_count(), number of cpu
+
+        return (G,I,O) or list((G,I,O))
         """
-        I_nodes = set(['i%i'%x for x in range(n_I)])
-        O_nodes = set(['o%i'%x for x in range(n_O)])
-        G_steps = [] #evolution of graph step by step
+        #initialization
+        G = nx.complete_graph(n_aux+n_I+n_O)
+        nset = cls.get_power_set(G.nodes)
 
-        G_init = cls.get_random_io_graphf(I_nodes, O_nodes, ncpu=ncpu)
-        G_steps.append(G_init)
-        for i in range(n_aux):
-            G_init = cls.insert_node_randomly(G_init, I_nodes, O_nodes, i)
-            G_steps.append(G_init)
-
-        for i,G in enumerate(G_steps):
-            og = OpenGraph(G, I_nodes, O_nodes)
-            og.draw_graph('out%s.png'%str(i))
-
-        return G_init
-
-
-    @classmethod
-    def insert_node_randomly(cls, G, I, O, node, ncpu=4, random_seed=None):
-        """
-        Insert a node called node to a graph randomly while maintaining
-        the existence of flow
-
-        :G:
-        :prevnode:
-        """
-        P_args = [(G, I, O, node, edge_target) for edge_target in G.edges ]
-        P = Pool(ncpu)
-        results = P.starmap(cls._swapnode_check_flow_, P_args)
-
-        random.seed(random_seed)
-        return random.choice([res for res in results if res])
-
-
-
-    @classmethod
-    def _swapnode_check_flow_(cls, G, I, O, node, edge_target):
-        """
-        Swap the node and check if flow exist.
-        This called as a worker
-        """
-        n1, n2 = edge_target
-        G.remove_edge(*edge_target)
-        G.add_edges_from([(node, n1),(node, n2)])
-        flow_exist, f, vs, sanity = cls.flow(G,I,O)
-
-        if flow_exist :
-            return G
-        else :
-            return False
-
-
-
-    @classmethod
-    def get_random_io_graphf(cls, I_nodes, O_nodes, ncpu=4, random_seed=None):
-        """
-        Return a random graph, that has flow, contains only
-        input and output qubits
-        """
-        #initialize graph, try connect I-O minimally to get a flow
-        G = nx.Graph()
-        G.add_edges_from(product(I_nodes,O_nodes))
-
-        flow_exist, f, vs, sanity = cls.flow(G,I_nodes,O_nodes)
-        if not flow_exist :
-            fulledges_pset = cls.get_power_set(G.edges)
-
-            # remove emptyset and the set
-            poss_edges = [ss for ss in fulledges_pset]
-            poss_edges.remove(set())
-            poss_edges.remove(set(G.edges))
-
-            #initial graphs with flow
-            P=Pool(ncpu)
-            p_args = [(G.copy(),I_nodes,O_nodes, edges, idx) for idx,edges in enumerate(fulledges_pset)]
-            results = P.starmap(cls._remove_edges_forflow, p_args)
-
+        I,O = {1},{1}
+        while I == O :
             random.seed(random_seed)
-            return random.choice([res for res in results if res])
+            I = random.choice([ss for ss in nset if n_I==len(ss)])
+            O = random.choice([ss for ss in nset if n_O==len(ss)])
 
+        ncpu = ncpu if ncpu else cpu_count()
+        P = Pool(ncpu)
+        p_args = [(edges,G.nodes, I,O) for edges in cls.get_power_set(G.edges)]
+        results = P.starmap(cls._try_graph, p_args)
+        opengraphs = [(res, I, O) for res in results if res]
 
+        if return_many :
+            return opengraphs
+        else :
+            random.seed(random_seed)
+            return random.choice(opengraphs)
 
     @classmethod
-    def _remove_edges_forflow(cls, G, I, O, redges, idx):
+    def _try_graph(cls, edges, nodes, I, O):
         """
         Try to obtain a graph with flow by removing edges of graph G
 
@@ -293,13 +240,21 @@ class OpenGraph:
         :O: iter, the list of output nodes
         :redges: list(tuple), pair of nodes at the end of edge to be removed
         """
-        G.remove_edges_from(redges)
-        flow_exist, f, vs, sanity = cls.flow(G,I,O)
-
-        if flow_exist :
-            return G
-        else :
+        if len(edges) == 0 :
             return False
+
+        G = nx.Graph()
+        G.add_nodes_from(nodes)
+        G.add_edges_from(edges)
+
+        if not nx.is_connected(G):
+            return False
+        else :
+            flow_exist, f, vs = cls.flow(G,I,O)
+            if flow_exist :
+                return G
+            else :
+                return False
 
 
 
@@ -319,39 +274,6 @@ class OpenGraph:
 
         return sorted(power_set, key=lambda x: len(x))
 
-
-
-
-
-    @classmethod
-    def _candidate_subgraph_(cls, G, new_node, past_node, I_nodes, ordering, f):
-        """
-        Iteration to get a graph with flow
-        """
-        G2, g = G.copy(), f.copy()
-        newnode, nattr = new_node[0], new_node[1]
-        G2.add_node(newnode,**nattr)
-        G2.add_edge(past_node, newnode)
-        g[past_node] = newnode
-        v_aux = set(G2.nodes)-I_nodes
-
-        #temporary
-        dnode = 'd'
-        dedge = (newnode, dnode)
-        G2.add_node(dnode)
-        G2.add_edge(*dedge)
-        g[newnode] = dnode
-        ordering[dnode] = ordering[newnode]+1
-        sanity= 3 == sum((cls.criteria_f0(G2, v_aux, g),
-                          cls.criteria_f1(G2, v_aux, g, ordering),
-                          cls.criteria_f2(G2, v_aux, g, ordering)))
-        G2.remove_edge(*dedge)
-        G2.remove_node(dnode)
-        del g[newnode]
-        del ordering[dnode]
-
-        if sanity:
-            return (G2, g)
 
 
 ## Flow-related methods
@@ -374,9 +296,12 @@ class OpenGraph:
         """
         g, l, Vs = dict(), dict(), dict()
 
-        for v in O: l[v] = 0
-
+        for v in O:
+            l[v] = 0
         is_cflow_exist = cls._flowaux_(G,I,O,O-I,1,g,l,Vs)
+
+
+
 
         #the class obtained is reversed
         Vs_sorted = dict()
@@ -391,11 +316,17 @@ class OpenGraph:
                 node_ordering[node] = order
         v_aux = set(G.nodes)-I-O
 
-        sanity= 3 == sum((cls.criteria_f0(G, v_aux, g),
-                     cls.criteria_f1(G, v_aux, g, node_ordering),
-                     cls.criteria_f2(G, v_aux, g, node_ordering)))
+        if is_cflow_exist :
+            sanity= 4 == sum([cls.criteria_f0(G, v_aux, g)
+                         ,cls.criteria_f1(G, v_aux, g, node_ordering)
+                         ,cls.criteria_f2(G, v_aux, g, node_ordering)
+                         ,len(I.intersection(g.values()))==0
+                            ])
+            if not sanity :
+                raise FlowError('DANGEROUS! FLOW EXISTS BUT NOT ALL CRITERIA FULLFILLED')
 
-        return (is_cflow_exist, g, Vs_sorted, sanity)
+
+        return (is_cflow_exist, g, Vs_sorted)
 
 
     @classmethod
@@ -409,7 +340,6 @@ class OpenGraph:
         :Vs: dict
         """
         V, Out2, C2 = set(G.nodes), set(), set()
-
         for v in C :
             u = set(G.neighbors(v)).intersection(V-Out)
             if len(u)==1:
@@ -419,7 +349,7 @@ class OpenGraph:
                 C2 = C2.union({v})
         Vs[k]=Out2
         if len(Out2)==0 :
-            if Out == V:
+            if len(Out.intersection(V))== len(V):
                 return True
             else :
                 return False
