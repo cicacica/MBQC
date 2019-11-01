@@ -235,7 +235,7 @@ class Lazy1WQC(GraphState):
                 else :
                     qalive -= 1
             bound += [max(qalive_i)]
-        return (min(bound), max(bound))
+        return max(bound)
 
 
 

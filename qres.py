@@ -217,10 +217,13 @@ class OpenGraph:
             random.seed(random_seed)
             I = random.choice([ss for ss in nset if n_I==len(ss)])
             O = random.choice([ss for ss in nset if n_O==len(ss)])
+        print("Input and output set",I,O)
 
         ncpu = ncpu if ncpu else cpu_count()
         P = Pool(ncpu)
-        p_args = [(edges,G.nodes, I,O) for edges in cls.get_power_set(G.edges)]
+        edges_pset = cls.get_power_set(G.edges)
+        print("%i edges combinations, memory estimation %f GB"%(len(edges_pset), 744*len(edges_pset)/1024/1024))
+        p_args = [(edges,G.nodes, I,O) for edges in edges_pset]
         results = P.starmap(cls._try_graph, p_args)
         opengraphs = [(res, I, O) for res in results if res]
 
@@ -272,7 +275,7 @@ class OpenGraph:
                 new_sets.append(subss | {element})
             power_set.extend(new_sets)
 
-        return sorted(power_set, key=lambda x: len(x))
+        return power_set
 
 
 
