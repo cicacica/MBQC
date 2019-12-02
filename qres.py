@@ -139,7 +139,11 @@ class OpenGraph:
                     partial_order : False
                   }
         """
-        opt = {'flow': True, 'total_order': False, 'partial_order': False}
+        opt = {'flow': True, #done
+               'total_order': False, #not yet
+               'partial_order': False, #not yet
+               'color': True
+               }
         for k,v in opt.items():
             if k in options :
                 opt[k] = options[k]

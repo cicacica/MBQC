@@ -140,9 +140,13 @@ class Lazy1WQC(GraphState):
         """
         return set(self.G.neighbors(node_i))
 
-    def sortedtot_nodes(self):
+    def sortedtot_nodes(self, *nodes):
         """
-        Return a list of nodes ordered by it's total ordering
+        Return a list of all nodes ordered by it's total ordering.
+        If argument nodes is given, then it returnes correspondingly.
+
+        param
+            :nodes:list(node) the list of nodes to be sorted
 
         return
             list(nodes)
@@ -220,10 +224,18 @@ class Lazy1WQC(GraphState):
         for samp in range(nsampling):
             # sample from a random total ordering
             self.set_total_order_random(random_seed=random_seed)
-            #"assigning" input state to input nodes
-            qalive_i = [0]*len(self.G.nodes)
-            qalive = 0 if self.I_type == 'classical' else len(self.I)
-            for i,node in enumerate(self.sortedtot_nodes()):
+
+            #"assigning" input state to input nodes at once of per time-step
+            if self.I_type == 'classical':
+                nodes = self.sortedtot_nodes()
+                qalive = 0
+            else: #quantum
+                nodes = self.sortedtot_nodes(set(self.G.nodes).difference(self.I))
+                qalive = len(self.I)
+
+            qalive_i=[0]*len(nodes)
+            #computation round starts
+            for i,node in enumerate(nodes):
                 #"operating N_Ai"
                 qalive += len(self.A_i(node))
                 qalive_i[i] += qalive
@@ -235,7 +247,7 @@ class Lazy1WQC(GraphState):
                 else :
                     qalive -= 1
             bound += [max(qalive_i)]
-        return max(bound)
+        return (min(bound),max(bound))
 
 
 
