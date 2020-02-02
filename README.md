@@ -1,5 +1,11 @@
-# boqc
-Blind oracular quantum computation and friends
+# MBQC 
+Measurement-Based Quantum Computations
 
 Current features : 
-Lazy 1WQC, hypothetically
+Lazy 1WQC
+
+Future features:
+1WQC
+BQC
+BOQC
+BOQCo
