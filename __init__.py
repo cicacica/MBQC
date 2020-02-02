@@ -1,0 +1,3 @@
+"""
+BOQC package
+"""

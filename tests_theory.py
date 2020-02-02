@@ -18,16 +18,19 @@ from subprocess import run
 import networkx as nx
 import json
 
-import example_graphstates
+
+#non standard library
 from example_graphstates import *
-from boqc import Lazy1WQC
-from qres import OpenGraph, FlowError
+from mbqc.qcomp import Lazy1WQC
+from mbqc.qres import OpenGraph
+from mbqc.lib import FlowError
 
 def get_graphs_fun():
     """
     Get the graphs functions. Those functions generate graphs.
     """
-    return [globals()[name] for name in dir(example_graphstates) if 'graph' in name]
+    #return [globals()[name] for name in dir(example_graphstates) if 'graph' in name]
+    return [graph_example_boqc, graph_H, graph_exact3grover]
 
 
 def test_lemma2(gio_list):
@@ -106,9 +109,7 @@ def test_conj1(gio_list, show='print', n_sampling=10):
             lazyc.draw_graph('%s/%s'%(outpath,fname), title=title)
 
 
-
-
-def get_random_graphs(n_I, n_O, n_aux, outpath, not_tight_bound_draw=True, ncpu=False, conj1=True):
+def get_random_graphs(n_I, n_O, n_aux, outpath, ngraph=False, draw_only_untight_bounds=True, ncpu=False):
     """
     Obtain random graphs with flow in folder 'graphf'. This also tests conjecture 1
     :n_I: int, number of input
@@ -119,8 +120,7 @@ def get_random_graphs(n_I, n_O, n_aux, outpath, not_tight_bound_draw=True, ncpu=
     :conj1:boolean, also test the conjecture
     """
     run(['mkdir', '-p', outpath])
-    results = OpenGraph.random_open_graph(n_I, n_O, n_aux, return_many=True, random_seed=None, ncpu=ncpu)
-
+    results = OpenGraph.random_open_graph(n_I, n_O, n_aux, ngraph=ngraph, random_seed=None, ncpu=ncpu)
     dicress =  []
     for i,res in enumerate(results) :
         dres = dict()

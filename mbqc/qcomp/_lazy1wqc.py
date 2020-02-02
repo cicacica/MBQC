@@ -20,9 +20,14 @@ __maintainer__ = "Cica Gustiani"
 __email__ = "cicagustiani@gmail.com"
 
 
-from qres import GraphState, OpenGraph, nx
+#standard library
 from numpy import random
+from time import time
+from multiprocessing import current_process
+import networkx as nx
 
+#self defined library
+from mbqc.qres import GraphState, OpenGraph
 
 
 
@@ -49,44 +54,31 @@ class Lazy1WQC(GraphState):
         self.O_type = 'quantum'
 
 
-    def set_total_order_random(self, random_seed=None):
+    def set_total_order_random(self, random_seed=False):
         """ Generate a random total ordering that follows flow, then s
             set attribute 'total_order' to every node in G.
             Total ordering goes from 0 to len(V)-1
 
         param
-            :random_seed: int, the seed for random ordering, for reproducibility
+            :random_seed: int, the seed for random ordering for reproducibility. If it
+                          is not specified, then it will take time + memory location of
+                          the graph + thread id --- I'm trying to make it thread safe
+                          with multiprocessing.
         """
         idx, torder = 0, dict()
+        if not random_seed:
+            proc = current_process()
+            random_seed=int(str(time()).replace('.',''))-hash(self.G)-proc.pid
+            random_seed=random_seed%(2**32 - 1)
+
+        rs = random.RandomState(random_seed)
         for inset in self.ordering_class.values():
-            random.seed(random_seed)
-            ridx = random.permutation(range(idx,idx+len(inset)))
+            ridx = rs.permutation(range(idx,idx+len(inset)))
             for n,i in zip(inset, ridx):
                 torder[n]=i
             idx += len(inset)
 
         self.set_total_order(torder)
-
-
-    def set_io_type(self, input_type, output_type):
-        """ Set the input and output type. By default, input and output are
-        quantum.
-
-        param
-            :input_type:str('quantum'|'classical') the input type: classical or quantum.
-                        if classical, the state does not required to be prepared ahead.
-            :output_type:str('quantum'|'classical') the input type: classical or quantum
-                        if classical, all qubits in graph will be measured.
-        """
-        ioty = {'quantum', 'classical'}
-        if input_type not in ioty:
-            raise ValueError('input type must be quantum or classical')
-        if output_type not in ioty:
-            raise ValueError('output type must be quantum or classical')
-
-        self.I_type = input_type
-        self.O_type = output_type
-
 
 
     def set_total_order(self, total_ordering):
@@ -114,6 +106,26 @@ class Lazy1WQC(GraphState):
         self.total_ordering = total_ordering
 
 
+    def set_io_type(self, input_type, output_type):
+        """ Set the input and output type. By default, input and output are
+        quantum.
+
+        param
+            :input_type:str('quantum'|'classical') the input type: classical or quantum.
+                        if classical, the state does not required to be prepared ahead.
+            :output_type:str('quantum'|'classical') the input type: classical or quantum
+                        if classical, all qubits in graph will be measured.
+        """
+        ioty = {'quantum', 'classical'}
+        if input_type not in ioty:
+            raise ValueError('input type must be quantum or classical')
+        if output_type not in ioty:
+            raise ValueError('output type must be quantum or classical')
+
+        self.I_type = input_type
+        self.O_type = output_type
+
+
     def cneighbors(self, node_i) :
         """
         Return a set of closed neighborhood of node i. In BOQC paper
@@ -127,6 +139,7 @@ class Lazy1WQC(GraphState):
         """
         return set(self.G.neighbors(node_i)).union({node_i})
 
+
     def neighbors(self, node_i) :
         """
         Return a set of open neighborhood of node i. In BOQC paper
@@ -139,6 +152,7 @@ class Lazy1WQC(GraphState):
             set
         """
         return set(self.G.neighbors(node_i))
+
 
     def sortedtot_nodes(self, *nodes):
         """
@@ -211,45 +225,66 @@ class Lazy1WQC(GraphState):
         return res
 
 
-    def bound_physical_qubit(self, nsampling=1, random_seed=None):
+    def bound_physical_qubit(self, nsampling, hash_number=False):
         """
-        Explicitely calculate a bound of physical qubits, given random sampling
-        n_sampling times. The bound for input-output types are different.
+        Calculate the bound of physical qubits number from nsampling samples.
 
         param
             :nsampling: int, number of sampling
-            :random_seed: int, the random seed, for reproduciblility
+            :hash_number: list(int), contains seed for every sample.
+                           if not given, it creates a list of seeds.
+
+        return
+            (int, int): (lower bound, upper bound)
         """
-        bound = []
-        for samp in range(nsampling):
-            # sample from a random total ordering
-            self.set_total_order_random(random_seed=random_seed)
+        #create equally-spaced non-overlaping seeds
+        if not random_seeds :
+            max_num = int(2147483647/nsampling)
+            ranstate = random.RandomState()
+            random_seeds = [i*ranstate.random_integers() for i in range(1,nsampling+1)]
 
-            #"assigning" input state to input nodes at once of per time-step
-            if self.I_type == 'classical':
-                nodes = self.sortedtot_nodes()
-                qalive = 0
-            else: #quantum
-                nodes = self.sortedtot_nodes(set(self.G.nodes).difference(self.I))
-                qalive = len(self.I)
+        #sampling
+        number_physicalq = [self.physical_qubit(seed) for seed in random_seeds]
 
-            qalive_i=[0]*len(nodes)
-            #computation round starts
-            for i,node in enumerate(nodes):
-                #"operating N_Ai"
-                qalive += len(self.A_i(node))
-                qalive_i[i] += qalive
+        return (min(number_physicalq),max(number_physicalq))
 
-                #"measuring i" if i is not in output nodes
-                if node in self.O :
-                    if self.O_type == 'quantum' :
-                        pass
-                else :
+
+    def physical_qubit(self, random_seed=None):
+        """
+        Explicitly calculate the number of physical qubit required, given
+        a random ordering.
+
+        param
+            :random_seed: int, random seed for reproduciblility
+
+        return
+            int
+        """
+        # sample from a random total ordering
+        self.set_total_order_random(random_seed=random_seed)
+
+        #"assigning" input state to input nodes at once of per time-step
+        if self.I_type == 'classical':
+            nodes = self.sortedtot_nodes()
+            qalive = 0
+        else: #quantum
+            nodes = self.sortedtot_nodes(set(self.G.nodes).difference(self.I))
+            qalive = len(self.I)
+
+        qalive_i=[0]*len(nodes)
+        #computation round starts
+        for i,node in enumerate(nodes):
+            #"operating N_Ai"
+            qalive += len(self.A_i(node))
+            qalive_i[i] += qalive
+
+            #"measuring i" if i is not in output nodes or classical output
+            if node in self.O :
+                if self.O_type == 'classical' :
                     qalive -= 1
-            bound += [max(qalive_i)]
-        return (min(bound),max(bound))
-
-
+            else :
+                qalive -= 1
+        return max(qalive_i)
 
 
 
